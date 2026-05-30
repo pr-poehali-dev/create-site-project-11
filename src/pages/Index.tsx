@@ -97,6 +97,67 @@ function playClick(ctx: AudioContext) {
   osc.start(ctx.currentTime); osc.stop(ctx.currentTime + 0.2);
 }
 
+function playSunSound(ctx: AudioContext) {
+  const dur = 3.5;
+  const master = ctx.createGain();
+  master.gain.setValueAtTime(0, ctx.currentTime);
+  master.gain.linearRampToValueAtTime(0.55, ctx.currentTime + 0.15);
+  master.gain.setValueAtTime(0.55, ctx.currentTime + dur - 0.8);
+  master.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + dur);
+  master.connect(ctx.destination);
+
+  // Глубокий гул — основа солнца
+  const base = ctx.createOscillator();
+  const baseGain = ctx.createGain();
+  base.type = "sawtooth";
+  base.frequency.setValueAtTime(36.7, ctx.currentTime);
+  base.frequency.linearRampToValueAtTime(32, ctx.currentTime + dur);
+  baseGain.gain.value = 0.4;
+  base.connect(baseGain); baseGain.connect(master);
+  base.start(ctx.currentTime); base.stop(ctx.currentTime + dur);
+
+  // Горячее мерцание — верхний слой
+  const shimmer = ctx.createOscillator();
+  const shimGain = ctx.createGain();
+  shimmer.type = "sine";
+  shimmer.frequency.setValueAtTime(146.8, ctx.currentTime);
+  shimmer.frequency.linearRampToValueAtTime(110, ctx.currentTime + dur);
+  shimGain.gain.value = 0.25;
+  shimmer.connect(shimGain); shimGain.connect(master);
+  shimmer.start(ctx.currentTime); shimmer.stop(ctx.currentTime + dur);
+
+  // ЛФО — пульсация как солнечная активность
+  const lfo = ctx.createOscillator();
+  const lfoGain = ctx.createGain();
+  lfo.type = "sine";
+  lfo.frequency.value = 3.2;
+  lfoGain.gain.value = 18;
+  lfo.connect(lfoGain); lfoGain.connect(shimmer.frequency);
+  lfo.start(ctx.currentTime); lfo.stop(ctx.currentTime + dur);
+
+  // Короны — высокий свист на обертоне
+  const crown = ctx.createOscillator();
+  const crownGain = ctx.createGain();
+  crown.type = "sine";
+  crown.frequency.setValueAtTime(440, ctx.currentTime);
+  crown.frequency.exponentialRampToValueAtTime(220, ctx.currentTime + dur * 0.7);
+  crownGain.gain.setValueAtTime(0.12, ctx.currentTime);
+  crownGain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + dur * 0.7);
+  crown.connect(crownGain); crownGain.connect(master);
+  crown.start(ctx.currentTime); crown.stop(ctx.currentTime + dur * 0.7);
+
+  // Долгое эхо-реверберация
+  const delay = ctx.createDelay(1.0);
+  const delayFb = ctx.createGain();
+  const delayOut = ctx.createGain();
+  delay.delayTime.value = 0.6;
+  delayFb.gain.value = 0.45;
+  delayOut.gain.value = 0.3;
+  master.connect(delay);
+  delay.connect(delayFb); delayFb.connect(delay);
+  delay.connect(delayOut); delayOut.connect(ctx.destination);
+}
+
 function playPlanetSound(ctx: AudioContext, freq: number, type: OscillatorType) {
   const osc = ctx.createOscillator();
   const gain = ctx.createGain();
@@ -421,10 +482,19 @@ export default function Index() {
     const rect = canvas.getBoundingClientRect();
     const mx = e.clientX - rect.left, my = e.clientY - rect.top;
     const cur = sceneRef.current;
-    const planetsToCheck = cur === "solar" ? planetsRef.current : cur === "unknown" ? unknownPlanetsRef.current : null;
-    if (!planetsToCheck) return;
+    if (cur !== "solar" && cur !== "unknown") return;
+
     const ocx = cur === "solar" ? canvas.width / 2 : canvas.width / 2 * 1.1;
     const ocy = cur === "solar" ? canvas.height / 2 : canvas.height / 2 * 0.9;
+
+    // Проверка клика по солнцу (радиус ~40 + зона касания 20)
+    const sunDist = Math.sqrt((mx - ocx) ** 2 + (my - ocy) ** 2);
+    if (sunDist < 60) {
+      playSunSound(ctx);
+      return;
+    }
+
+    const planetsToCheck = cur === "solar" ? planetsRef.current : unknownPlanetsRef.current;
     planetsToCheck.forEach(p => {
       const px = ocx + Math.cos(p.angle) * p.orbitRadius;
       const py = ocy + Math.sin(p.angle) * p.orbitRadius;
